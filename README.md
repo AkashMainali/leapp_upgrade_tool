@@ -14,6 +14,7 @@
   Features interactive CLI validation, automated dependency management, dynamic inhibitor remediation generation, rich executive HTML dashboard reporting, and post-upgrade configuration auditing.
 </p>
 
+[Production Safety](#-production-safety-guarantee) •
 [Quick Start](#-quick-start) •
 [Architecture](#-architecture--workflow) •
 [Key Features](#-core-features) •
@@ -21,6 +22,33 @@
 [Troubleshooting](#-troubleshooting)
 
 </div>
+
+---
+
+## 🛡️ Production Safety Guarantee
+
+Running dry-runs and evaluations on mission-critical production servers demands strict read-only assurance. 
+
+### Does `pre-upgrade` modify the server?
+**No. The `pre-upgrade` assessment mode is non-destructive and read-only.**
+- **No Package Changes:** It does not install, remove, replace, or upgrade any OS or third-party packages or kernel modules.
+- **No Configuration Modification:** Existing system services, `/etc` configurations, network definitions, and daemon states remain completely untouched.
+- **Zero Workload Interruption:** It runs as a diagnostic dry-run without rebooting or pausing production workloads.
+
+### Subcommand Safety & System Impact Matrix
+
+| Subcommand | System Impact | Modifies Machine? | Production Assessment Safety |
+| :--- | :--- | :---: | :--- |
+| **`pre-upgrade`** | **Read-Only / Diagnostic** | ❌ **No** | **Safe for Live Production.** Scans hardware, kernel, RPM DB, and repos; writes report files only. |
+| **`post-upgrade`** | **Read-Only / Audit** | ❌ **No** | **Safe for Live Production.** Audits running kernel, `.rpmnew` diffs, and preserved 3rd-party RPMs. |
+| **`remediation_answer.sh`** | **State Confirmation** | ⚠️ **Minor** | Writes administrator choices (e.g. `confirm = True`) into `/var/log/leapp/answerfile`. |
+| **`install-pre-req`** | **Package Installation** | ⚠️ **Yes** | Enables official RHEL channels and installs the `leapp` utility and Cockpit modules. |
+| **`upgrade`** | **OS Migration Transaction** | 🚨 **Yes (Major)** | Commits OS upgrades and downloads target packages. Guarded by mandatory `UPGRADE` prompt. |
+
+### Operational Footprint of `pre-upgrade`
+While `pre-upgrade` does not modify operating system configuration or software, the underlying Red Hat `leapp` assessment binary leaves two transient operational footprints:
+1. **`/var/log/leapp/` Directory Creation:** Leapp initializes its working directory and writes diagnostic logs (`leapp-report.json`, `leapp-report.txt`, `leapp-preupgrade.log`). *(Subsequent scans may list an informational notice: `Detected modified files of the in-place upgrade tooling: /var/log/leapp`, which is expected and harmless).*
+2. **`answerfile` Generation:** If an ambiguous upgrade decision is discovered (such as legacy `pam_pkcs11`), Leapp records an unanswered prompt in `/var/log/leapp/answerfile` for administrator review.
 
 ---
 
@@ -61,7 +89,7 @@ flowchart LR
 # Step 1: Install Leapp migration packages and repository channels
 sudo ./leapp_upgrade_manager.sh install-pre-req
 
-# Step 2: Run dry-run checks and produce the interactive HTML assessment
+# Step 2: Run non-destructive dry-run checks and produce the interactive HTML assessment
 sudo ./leapp_upgrade_manager.sh pre-upgrade
 
 # Step 3: Clear any inhibitors using the automatically compiled script
@@ -152,7 +180,7 @@ Usage: ./leapp_upgrade_manager.sh {install-pre-req|pre-upgrade|upgrade|post-upgr
 
 Subcommands:
   install-pre-req  Enables official RHEL repositories and installs leapp packages
-  pre-upgrade      Executes pre-flight inspection, generates HTML report & remediation script
+  pre-upgrade      Executes non-destructive pre-flight inspection, generates HTML report & remediation script
   upgrade          Runs the in-place package migration (requires typing 'UPGRADE')
   post-upgrade     Performs post-reboot health check, inventory, and configuration audit
 ```
