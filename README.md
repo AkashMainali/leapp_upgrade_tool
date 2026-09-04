@@ -1,24 +1,21 @@
 <div align="center">
 
 # Red Hat Enterprise Linux Leapp Upgrade Manager
-### Enterprise-grade, automated lifecycle migration tool for RHEL 7 &rarr; 8 and RHEL 8 &rarr; 9
+### Enterprise Lifecycle Automation for RHEL 7 &rarr; 8 and RHEL 8 &rarr; 9
 
 [![RHEL](https://img.shields.io/badge/Platform-RHEL%207%20%7C%208%20%7C%209-CC0000.svg?logo=redhat&logoColor=white)](https://www.redhat.com/en/technologies/linux-platforms/enterprise-linux)
 [![Bash](https://img.shields.io/badge/Language-Bash%204+-4EAA25.svg?logo=gnubash&logoColor=white)](https://www.gnu.org/software/bash/)
 [![Python](https://img.shields.io/badge/Runtime-Python%202.7%20%7C%203.x-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-brightgreen.svg)]()
 
 <p align="center">
-  <b>Safe, idempotent, and production-ready automation wrapper around Red Hat Leapp.</b><br>
-  Features interactive CLI validation, automated dependency management, dynamic inhibitor remediation generation, rich executive HTML dashboard reporting, and post-upgrade configuration auditing.
+  <b>Safe, idempotent lifecycle wrapper around Red Hat Leapp.</b><br>
+  Automates dependency setup, non-destructive risk assessments, batch inhibitor remediations, offline HTML dashboards, and post-upgrade system auditing while strictly preserving third-party packages and repositories.
 </p>
 
-[Production Safety](#-production-safety-guarantee) •
 [Quick Start](#-quick-start) •
-[Architecture](#-architecture--workflow) •
-[Key Features](#-core-features) •
-[Reporting Dashboards](#-interactive-reporting-dashboards) •
+[Lifecycle Phases](#-upgrade-lifecycle-phases) •
+[Safety Matrix](#-production-safety-guarantee) •
 [Troubleshooting](#-troubleshooting)
 
 </div>
@@ -27,81 +24,105 @@
 
 ## 🛡️ Production Safety Guarantee
 
-Running dry-runs and evaluations on mission-critical production servers demands strict read-only assurance. 
+Running dry-runs and evaluations on live production hosts demands strict non-destructive assurance.
 
-### Does `pre-upgrade` modify the server?
-**No. The `pre-upgrade` assessment mode is non-destructive and read-only.**
-- **No Package Changes:** It does not install, remove, replace, or upgrade any OS or third-party packages or kernel modules.
-- **No Configuration Modification:** Existing system services, `/etc` configurations, network definitions, and daemon states remain completely untouched.
-- **Zero Workload Interruption:** It runs as a diagnostic dry-run without rebooting or pausing production workloads.
+- **`pre-upgrade` is 100% Read-Only:** It evaluates kernels, hardware, storage, and RPM packages without installing, removing, or upgrading any packages or configuration files. Running workloads remain unaffected.
+- **Benign Operational Footprint:** Only writes diagnostic logs to `/var/log/leapp/` and creates `/var/log/leapp/answerfile` if administrator decisions are required.
 
-### Subcommand Safety & System Impact Matrix
-
-| Subcommand | System Impact | Modifies Machine? | Production Assessment Safety |
-| :--- | :--- | :---: | :--- |
-| **`pre-upgrade`** | **Read-Only / Diagnostic** | ❌ **No** | **Safe for Live Production.** Scans hardware, kernel, RPM DB, and repos; writes report files only. |
-| **`post-upgrade`** | **Read-Only / Audit** | ❌ **No** | **Safe for Live Production.** Audits running kernel, `.rpmnew` diffs, and preserved 3rd-party RPMs. |
-| **`remediation_answer.sh`** | **State Confirmation** | ⚠️ **Minor** | Writes administrator choices (e.g. `confirm = True`) into `/var/log/leapp/answerfile`. |
-| **`install-pre-req`** | **Package Installation** | ⚠️ **Yes** | Enables official RHEL channels and installs the `leapp` utility and Cockpit modules. |
-| **`upgrade`** | **OS Migration Transaction** | 🚨 **Yes (Major)** | Commits OS upgrades and downloads target packages. Guarded by mandatory `UPGRADE` prompt. |
-
-### Operational Footprint of `pre-upgrade`
-While `pre-upgrade` does not modify operating system configuration or software, the underlying Red Hat `leapp` assessment binary leaves two transient operational footprints:
-1. **`/var/log/leapp/` Directory Creation:** Leapp initializes its working directory and writes diagnostic logs (`leapp-report.json`, `leapp-report.txt`, `leapp-preupgrade.log`). *(Subsequent scans may list an informational notice: `Detected modified files of the in-place upgrade tooling: /var/log/leapp`, which is expected and harmless).*
-2. **`answerfile` Generation:** If an ambiguous upgrade decision is discovered (such as legacy `pam_pkcs11`), Leapp records an unanswered prompt in `/var/log/leapp/answerfile` for administrator review.
+| Subcommand | System Impact | Modifies OS / Software? | Production Safe? |
+| :--- | :--- | :---: | :---: |
+| **`pre-upgrade`** | Read-Only Diagnostic Scan | ❌ No | ✅ **Yes (Live Production)** |
+| **`post-upgrade`** | Read-Only Audit & Verification | ❌ No | ✅ **Yes (Live Production)** |
+| **`remediation_answer.sh`** | Confirmation State File Write | ⚠️ Minor | Writes answers to `/var/log/leapp/answerfile` |
+| **`install-pre-req`** | Package & Repository Setup | ⚠️ Yes | Enables target repos and installs `leapp` tools |
+| **`upgrade`** | Major In-Place OS Migration | 🚨 Yes | Transactional package download (requires `UPGRADE`) |
 
 ---
 
-## 📌 Overview
+## 🔄 Upgrade Lifecycle Phases
 
-Upgrading Enterprise Linux across major release boundaries is high-risk. Unresolved kernel blockers, deprecated authentication plugins, missed answerfile confirmations, and repository mapping discrepancies routinely break migrations mid-stream.
+Execute each phase sequentially to ensure a clean, controlled migration:
 
-**Leapp Upgrade Manager** wraps the standard `leapp` utility in an end-to-end operational framework:
-- **Prevents illegal version leaps** (e.g., stops users from attempting an unsupported RHEL 7 &rarr; RHEL 9 jump).
-- **Auto-generates remediation scripts** by extracting unanswered dialog questions and inhibitor commands directly from assessment data.
-- **Delivers interactive HTML5 dashboards** with metrics cards, real-time search, and copy-paste remediation commands.
-- **Protects third-party software** by maintaining non-Red Hat RPMs, libraries, and custom repo definitions throughout and after migration.
-- **Resolves environment friction** via automatic runtime discovery (`python3`, `python2`, `/usr/libexec/platform-python`) and user permission restoration (`chown` back to invoking user).
+```mermaid
+flowchart LR
+    A[1. install-pre-req] --> B[2. pre-upgrade]
+    B --> C[3. remediation_answer.sh]
+    C --> D[4. upgrade]
+    D --> E((Reboot))
+    E --> F[5. post-upgrade]
+```
+
+### Phase 1: `install-pre-req`
+Enables official base and migration repository channels and installs required utilities:
+- **RHEL 7:** Enables `rhel-7-server-rpms`, `rhel-7-server-extras-rpms`, and installs `leapp`, `leapp-upgrade-el7toel8`, and `cockpit-leapp`.
+- **RHEL 8:** Enables `BaseOS` and `AppStream` channels and installs `leapp`, `leapp-upgrade-el8toel9`, and `cockpit-leapp`.
+```bash
+sudo ./leapp_upgrade_manager.sh install-pre-req
+```
+
+### Phase 2: `pre-upgrade`
+Performs a read-only compatibility scan to identify blocking issues before changing anything on the machine:
+- Executes `leapp preupgrade` non-destructively.
+- Compiles an interactive, responsive HTML dashboard (`<hostname>_Leapp_pre_upgrade_report_<timestamp>.html`) with filterable KPI metric cards and copyable command blocks.
+- Generates a standalone `remediation_answer.sh` script to auto-resolve pending decision prompts.
+- Recursively restores artifact folder ownership to your non-root user via `$SUDO_USER`.
+```bash
+sudo ./leapp_upgrade_manager.sh pre-upgrade
+```
+
+### Phase 3: Inhibitor Remediation
+Applies necessary answers and mitigates discovered blockers:
+- Executes batch decisions (e.g., `remove_pam_pkcs11_module_check.confirm=True`) to clear inhibitors without manual file editing.
+```bash
+sudo bash ./leapp_artifacts_*/remediation_answer.sh
+```
+
+### Phase 4: `upgrade`
+Executes the actual transactional in-place OS migration:
+- Requires interactive double-confirmation by typing `UPGRADE`.
+- Automatically checks for and offers to run unapplied `remediation_answer.sh` scripts.
+- Downloads target OS packages, verifies dependencies, and configures the upgrade bootloader.
+```bash
+sudo ./leapp_upgrade_manager.sh upgrade
+```
+
+### Phase 5: System Reboot
+Reboots the host into the temporary upgrade initramfs to perform package swaps, kernel migration, and SELinux relabeling:
+```bash
+sudo reboot
+```
+
+### Phase 6: `post-upgrade`
+Verifies system health and audits configurations after booting into the new major release:
+- Audits and tabulates preserved third-party/vendor RPMs without deleting them.
+- Lists leftover previous-generation packages (e.g., `.el7` RPMs on RHEL 8).
+- Scans `/etc/` for unmerged `.rpmnew` and `.rpmsave` configuration templates.
+- Emits actionable verification steps to re-enable SELinux enforcing mode and custom vendor repositories.
+```bash
+sudo ./leapp_upgrade_manager.sh post-upgrade
+```
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Clone & Permissions
 ```bash
+# 1. Clone repository & set permissions
 git clone https://github.com/AkashMainali/leapp_upgrade_tool.git
 cd leapp_upgrade_tool
 chmod +x leapp_upgrade_manager.sh
-```
 
-### 2. Full Upgrade Lifecycle
-
-```mermaid
-flowchart LR
-    A[install-pre-req] --> B[pre-upgrade]
-    B --> C[remediation_answer.sh]
-    C --> D[upgrade]
-    D --> E((Reboot))
-    E --> F[post-upgrade]
-```
-
-```bash
-# Step 1: Install Leapp migration packages and repository channels
+# 2. Run prerequisites & pre-upgrade assessment
 sudo ./leapp_upgrade_manager.sh install-pre-req
-
-# Step 2: Run non-destructive dry-run checks and produce the interactive HTML assessment
 sudo ./leapp_upgrade_manager.sh pre-upgrade
 
-# Step 3: Clear any inhibitors using the automatically compiled script
+# 3. Apply remediation answers & commit upgrade
 sudo bash ./leapp_artifacts_*/remediation_answer.sh
-
-# Step 4: Run the actual upgrade transaction (double-confirmation required)
 sudo ./leapp_upgrade_manager.sh upgrade
 
-# Step 5: Reboot into the target OS initramfs to finalize installation
+# 4. Finalize
 sudo reboot
-
-# Step 6: Verify system state, third-party packages, and config merges
+# (After reboot)
 sudo ./leapp_upgrade_manager.sh post-upgrade
 ```
 
@@ -109,156 +130,76 @@ sudo ./leapp_upgrade_manager.sh post-upgrade
 
 ## 🧭 Migration Matrix
 
-| Current OS | Target OS | Supported Directly? | Upgrade Strategy |
+| Current OS | Target OS | Supported Directly? | Migration Policy |
 | :--- | :--- | :---: | :--- |
-| **RHEL 7.9** | **RHEL 8.10** | ✅ **Yes** | Standard migration using `el7toel8` channels |
-| **RHEL 8.x** | **RHEL 9.x** | ✅ **Yes** | Standard migration using `el8toel9` channels |
-| **RHEL 7.x** | **RHEL 9.x** | ❌ **No** | **Two-phase migration:** RHEL 7 &rarr; RHEL 8, then RHEL 8 &rarr; RHEL 9 |
+| **RHEL 7.9** | **RHEL 8.10** | ✅ **Yes** | In-place migration via `el7toel8` channels |
+| **RHEL 8.x** | **RHEL 9.x** | ✅ **Yes** | In-place migration via `el8toel9` channels |
+| **RHEL 7.x** | **RHEL 9.x** | ❌ **No** | **Two-phase migration:** RHEL 7 &rarr; 8, then RHEL 8 &rarr; 9 |
 
-> **Guardrail Enforced:** If a user attempts to run the script on RHEL 7 targeting RHEL 9, the script exits immediately with an actionable error.
-
----
-
-## ⚡ Core Features
-
-### 1. Dynamic Inhibitor Remediation Engine
-Leapp frequently halts migrations with `Missing required answers in the answer file` (most commonly `remove_pam_pkcs11_module_check`). This tool:
-1. Automatically parses `/var/log/leapp/answerfile` and `/var/log/leapp/leapp-report.json`.
-2. Compiles a custom executable script: `leapp_artifacts_<hostname>_<timestamp>/remediation_answer.sh`.
-3. Auto-detects this script during the `upgrade` phase and prompts to execute answers with zero manual editing required.
-
-### 2. Enterprise Reporting Dashboards
-Generates standalone, CSS-inlined, responsive HTML dashboards that work completely offline:
-- **Executive Summary:** Hostname (FQDN), date/time, and migration path badges.
-- **KPI Metrics Tiles:** One-click filtering by severity (Inhibitors, High Risk, Medium, Low, Info).
-- **Interactive Search:** Real-time client-side filter by keyword, package name, or command.
-- **Code Terminal Cards:** Cleanly formatted bash commands with built-in clipboard copying.
-
-### 3. Non-Destructive Post-Upgrade Audit
-Official migration guides often suggest deleting non-Red Hat RPMs. This tool defaults to **zero software deletion**:
-- Inventories and tabulates all preserved third-party / vendor packages.
-- Identifies leftover `.el7` or `.el8` distribution RPMs.
-- Locates unmerged `/etc/*.rpmnew` and `/etc/*.rpmsave` files.
-- Provides commands to restore SELinux to `enforcing` and re-enable custom yum repositories.
-
-### 4. Non-Root File Ownership
-Scripts run under `sudo` typically leave generated reports locked to `root:root`. This framework captures `$SUDO_USER` and automatically performs a recursive `chown` back to the invoking user and primary group.
+> **Guardrail:** Direct RHEL 7 &rarr; RHEL 9 attempts are automatically caught and blocked before execution.
 
 ---
 
-## 📂 Artifacts Directory Layout
-
-Each assessment and audit run archives logs and reports cleanly alongside the script:
+## 📂 Artifacts Layout
 
 ```text
 leapp_upgrade_tool/
-├── leapp_upgrade_manager.sh               # Main executable manager script
-│
-├── leapp_artifacts_<host>_<timestamp>/    # Pre-upgrade outputs
+├── leapp_upgrade_manager.sh               # Main migration script
+├── leapp_artifacts_<host>_<timestamp>/    # Pre-upgrade scan directory
 │   ├── <host>_Leapp_pre_upgrade_report_<timestamp>.html
 │   ├── remediation_answer.sh             # Ready-to-run auto-generated answers
 │   ├── answerfile                        # Snapshot of /var/log/leapp/answerfile
-│   ├── leapp-report.json                 # Structured assessment data
-│   ├── leapp-report.txt                  # Full human-readable report
+│   ├── leapp-report.json                 # Structured assessment findings
 │   └── leapp-preupgrade.log              # Raw diagnostic actor log
-│
-└── leapp_post_artifacts_<host>_<timestamp>/ # Post-upgrade outputs
+└── leapp_post_artifacts_<host>_<timestamp>/ # Post-upgrade audit directory
     ├── <host>_Leapp_post_upgrade_report_<timestamp>.html
     ├── non_redhat_packages.txt           # Inventory of preserved third-party RPMs
-    ├── third_party_and_legacy_rpms.txt   # Leftover packages from prior major release
-    ├── repositories_status.txt           # YUM/DNF repository status map
-    ├── configuration_rpmnew_rpmsave.txt  # Audit list of configuration merges
-    └── leapp-upgrade.log                 # Upgrade transaction execution log
+    ├── third_party_and_legacy_rpms.txt   # Leftover packages from prior release
+    └── configuration_rpmnew_rpmsave.txt  # Audit list of configuration files
 ```
 
 ---
 
-## 🛠 Command Reference
-
-```text
-Usage: ./leapp_upgrade_manager.sh {install-pre-req|pre-upgrade|upgrade|post-upgrade}
-
-Subcommands:
-  install-pre-req  Enables official RHEL repositories and installs leapp packages
-  pre-upgrade      Executes non-destructive pre-flight inspection, generates HTML report & remediation script
-  upgrade          Runs the in-place package migration (requires typing 'UPGRADE')
-  post-upgrade     Performs post-reboot health check, inventory, and configuration audit
-```
-
----
-
-## 🔍 Troubleshooting & Known Inhibitors
+## 🔍 Troubleshooting
 
 <details>
-<summary><b>1. Cannot find required basic RHEL target repositories / Missing GPG Keys</b></summary>
+<summary><b>1. Target Repositories Not Found / Missing GPG Keys</b></summary>
 <br>
 
-**Symptoms:**
-```text
-Actor: missing_gpg_keys_inhibitor
-Message: Could not check for valid GPG keys
-Inhibitor: Cannot find required basic RHEL target repositories.
-```
-
-**Resolution:**
-The system is locked to an older minor release (such as `7.9` or `7Server`), preventing Subscription Manager from discovering RHEL 8 channels. Run:
+**Cause:** System is pinned to an older release (e.g. `7.9` or `7Server`), preventing Subscription Manager from discovering RHEL 8 channels.
 ```bash
 sudo subscription-manager release --unset
 sudo subscription-manager refresh
 sudo yum clean all
 sudo subscription-manager release --list
 ```
-*If operating in an air-gapped lab or Satellite setup without RHSM, supply local repos and execute with `leapp preupgrade --no-rhsm`.*
+*(For disconnected/Satellite networks, provide local repos and execute with `leapp preupgrade --no-rhsm`.)*
 </details>
 
 <details>
-<summary><b>2. Missing required answers in the answer file</b></summary>
+<summary><b>2. Missing Required Answers in Answer File</b></summary>
 <br>
 
-**Symptoms:**
-```text
-Inhibitor: Missing required answers in the answer file
-Section: remove_pam_pkcs11_module_check.confirm
-```
-
-**Resolution:**
-Run the remediation script generated by this tool:
+**Cause:** Undefined choice in `/var/log/leapp/answerfile` (commonly `remove_pam_pkcs11_module_check`).
 ```bash
 sudo bash ./leapp_artifacts_*/remediation_answer.sh
 ```
-Or execute directly via the CLI:
-```bash
-sudo leapp answer --section remove_pam_pkcs11_module_check.confirm=True
-```
 </details>
 
 <details>
-<summary><b>3. Booted kernel does not match newest installed kernel</b></summary>
+<summary><b>3. Running Kernel Mismatch</b></summary>
 <br>
 
-**Symptoms:**
-```text
-Inhibitor: Newest installed kernel not in use
-```
-
-**Resolution:**
-Reboot the machine into the newest installed kernel, confirm with `uname -r`, and re-run `pre-upgrade`:
+**Cause:** The booted kernel does not match the latest installed kernel package.
 ```bash
 sudo reboot
+# After reboot verify match:
+uname -r && rpm -q --last kernel | head -n1
 ```
 </details>
-
----
-
-## 🛡 Security & Safety Guardrails
-
-- **Mandatory Root Elevation:** Checks for `$EUID -eq 0` before any phase begins.
-- **Double Confirmation:** Upgrade execution requires typing uppercase `UPGRADE` to prevent accidental commits.
-- **Permissive Exit Codes:** Handles non-zero return codes from `leapp preupgrade` gracefully so reports compile even when inhibitors are detected.
-- **Safe HTML Escaping:** Sanitizes finding summaries and titles to prevent malformed rendering across both Python 2.7 and Python 3 engines.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
+Licensed under the [MIT License](LICENSE).
